@@ -36,6 +36,7 @@ fn main() {
         "token" => {
             ensure_arg_count(3);
             ensure_gpg();
+            ensure_oathtool();
             token(&arg(2));
         }
 
@@ -213,6 +214,16 @@ fn secret_enc_path(wd: &Path, name: &str) -> PathBuf {
 
 fn ensure_gpg() {
     match Command::new("gpg").arg("--version").output() {
+        Ok(_) => (),
+        Err(_) => {
+            println!("GPG not detected, exiting...");
+            process::exit(2);
+        }
+    }
+}
+
+fn ensure_oathtool() {
+    match Command::new("oathtool").output() {
         Ok(_) => (),
         Err(_) => {
             println!("GPG not detected, exiting...");
