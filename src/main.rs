@@ -18,6 +18,10 @@ fn main() {
             configure();
         }
 
+        "list" => {
+            list();
+        }
+
         "add" => {
             ensure_arg_count(4);
             ensure_gpg();
@@ -64,6 +68,22 @@ fn configure() {
         .unwrap();
 
     println!("Configured!");
+}
+
+fn list() {
+    println!("Listing...");
+
+    let wd = ensure_wd().unwrap();
+    let entries = fs::read_dir(&wd).unwrap();
+
+    for entry in entries {
+        let path = entry.unwrap().path();
+
+        if fs::metadata(&path).unwrap().is_dir() {
+            let name = path.strip_prefix(&wd).unwrap();
+            println!("{}", &name.display());
+        }
+    }
 }
 
 fn add(name: &str, secret: &str) {
