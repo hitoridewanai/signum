@@ -104,6 +104,13 @@ fn add(name: &str, secret: &str) {
 
 fn remove(name: &str) {
     println!("Removing, name: {}", name);
+
+    let mut wd = ensure_wd().unwrap();
+    wd.push(name);
+
+    fs::remove_dir_all(&wd).unwrap();
+
+    println!("Removed, name: {}", name);
 }
 
 fn token(name: &str) {
