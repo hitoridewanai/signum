@@ -212,7 +212,13 @@ fn secret_enc_path(wd: &Path, name: &str) -> PathBuf {
 }
 
 fn ensure_gpg() {
-    // TODO: ensure
+    match Command::new("gpg").arg("--version").output() {
+        Ok(_) => (),
+        Err(_) => {
+            println!("GPG not detected, exiting...");
+            process::exit(2);
+        }
+    }
 }
 
 fn read_config(wd: &Path) -> Result<HashMap<&str, String>, Error> {
