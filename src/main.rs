@@ -1,4 +1,3 @@
-use home;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{stdin, stdout, Error, Read, Write};
@@ -35,6 +34,7 @@ fn main() {
             ensure_gpg();
             token(&arg(2));
         }
+
         _ => {
             print_usage();
         }
@@ -90,7 +90,7 @@ fn token(name: &str) {
 
     let wd = ensure_wd().unwrap();
     let config = read_config(&wd).unwrap();
-    let secret_enc_path = secret_enc_path(&wd, &name);
+    let secret_enc_path = secret_enc_path(&wd, name);
     let secret = decrypt_secret(&secret_enc_path, &config).unwrap();
 
     let output = Command::new("sh")
@@ -104,10 +104,7 @@ fn token(name: &str) {
     println!("{}", token);
 }
 
-fn decrypt_secret(
-    secret_enc_path: &PathBuf,
-    config: &HashMap<&str, String>,
-) -> Result<String, Error> {
+fn decrypt_secret(secret_enc_path: &Path, config: &HashMap<&str, String>) -> Result<String, Error> {
     let user_id = config.get("user_id").unwrap();
     let key_id = config.get("key_id").unwrap();
 
@@ -121,10 +118,10 @@ fn decrypt_secret(
 
     let secret = String::from_utf8(output.stdout).unwrap();
 
-    return Result::Ok(secret);
+    Result::Ok(secret)
 }
 
-fn encrypt_secret(secret_path: &PathBuf, config: &HashMap<&str, String>) -> Result<(), Error> {
+fn encrypt_secret(secret_path: &Path, config: &HashMap<&str, String>) -> Result<(), Error> {
     let user_id = config.get("user_id").unwrap();
     let key_id = config.get("key_id").unwrap();
 
@@ -138,26 +135,26 @@ fn encrypt_secret(secret_path: &PathBuf, config: &HashMap<&str, String>) -> Resu
 
     fs::remove_file(secret_path)?;
 
-    return Ok(());
+    Ok(())
 }
 
-fn store_secret(profile: &PathBuf, secret: &str) -> Result<PathBuf, Error> {
+fn store_secret(profile: &Path, secret: &str) -> Result<PathBuf, Error> {
     let mut path = PathBuf::from(profile);
     path.push(SECRET_FILENAME);
 
     let mut file = File::create(&path)?;
     file.write_all(secret.as_bytes())?;
 
-    return Result::Ok(path);
+    Result::Ok(path)
 }
 
-fn create_profile(wd: &PathBuf, name: &str) -> Result<PathBuf, Error> {
+fn create_profile(wd: &Path, name: &str) -> Result<PathBuf, Error> {
     let mut path = PathBuf::from(wd);
     path.push(name);
 
     fs::create_dir(&path)?;
 
-    return Result::Ok(path);
+    Result::Ok(path)
 }
 
 fn ensure_wd() -> Result<PathBuf, Error> {
@@ -169,7 +166,7 @@ fn ensure_wd() -> Result<PathBuf, Error> {
         fs::create_dir(&wd)?;
     }
 
-    return Result::Ok(wd);
+    Result::Ok(wd)
 }
 
 fn read_user_input(buffer: &mut String) {
@@ -177,7 +174,7 @@ fn read_user_input(buffer: &mut String) {
 }
 
 fn arg(nth: usize) -> String {
-    return std::env::args().nth(nth).unwrap();
+    std::env::args().nth(nth).unwrap()
 }
 
 fn ensure_arg_count(count: usize) {
@@ -186,19 +183,19 @@ fn ensure_arg_count(count: usize) {
     }
 }
 
-fn secret_enc_path(wd: &PathBuf, name: &str) -> PathBuf {
+fn secret_enc_path(wd: &Path, name: &str) -> PathBuf {
     let mut path = PathBuf::from(wd);
     path.push(name);
     path.push(SECRET_ENC_FILENAME);
 
-    return path;
+    path
 }
 
 fn ensure_gpg() {
     // TODO: ensure
 }
 
-fn read_config(wd: &PathBuf) -> Result<HashMap<&str, String>, Error> {
+fn read_config(wd: &Path) -> Result<HashMap<&str, String>, Error> {
     let mut path = PathBuf::from(wd);
     path.push(CONFIG_FILENAME);
 
@@ -207,7 +204,7 @@ fn read_config(wd: &PathBuf) -> Result<HashMap<&str, String>, Error> {
     let mut data = String::new();
     file.read_to_string(&mut data)?;
 
-    let values: Vec<&str> = data.split("\n").collect();
+    let values: Vec<&str> = data.split('\n').collect();
 
     let user_id = String::from(values[0]);
     let key_id = String::from(values[1]);
@@ -216,7 +213,7 @@ fn read_config(wd: &PathBuf) -> Result<HashMap<&str, String>, Error> {
     config.insert("user_id", user_id);
     config.insert("key_id", key_id);
 
-    return Result::Ok(config);
+    Result::Ok(config)
 }
 
 fn print_usage() {
@@ -224,7 +221,7 @@ fn print_usage() {
     println!("\nUSAGE:");
     println!("\tsignum OPERATION ARGS");
     println!("\nOPERATIONS:");
-    println!("\tconfigure | add | remove | token");
+    println!("\tconfigure | list | add | remove | token");
     println!("\nadd:");
     println!("\tname secret");
     println!("\nremove:");
