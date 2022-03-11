@@ -226,7 +226,7 @@ fn ensure_oathtool() {
     match Command::new("oathtool").output() {
         Ok(_) => (),
         Err(_) => {
-            println!("GPG not detected, exiting...");
+            println!("Oathtool not detected, exiting...");
             process::exit(2);
         }
     }
