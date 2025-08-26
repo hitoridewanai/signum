@@ -14,35 +14,24 @@ fn main() {
     ensure_arg_count(2);
 
     match arg(1).as_str() {
-        "configure" => {
-            configure();
-        }
-
-        "list" => {
-            list();
-        }
-
+        "configure" => configure(),
+        "list" => list(),
         "add" => {
             ensure_arg_count(4);
             ensure_gpg();
             add(&arg(2), &arg(3));
         }
-
         "remove" => {
             ensure_arg_count(3);
             remove(&arg(2));
         }
-
         "token" => {
             ensure_arg_count(3);
             ensure_gpg();
             ensure_oathtool();
-            token(&arg(2));
+            token(&arg(2), Option::None);
         }
-
-        _ => {
-            print_usage();
-        }
+        _ => print_usage(),
     }
 }
 
@@ -99,7 +88,7 @@ fn add(name: &str, secret: &str) {
 
     println!("Added, name: {}", name);
 
-    token(name);
+    token(name, Option::Some(true));
 }
 
 fn remove(name: &str) {
@@ -113,8 +102,11 @@ fn remove(name: &str) {
     println!("Removed, name: {}", name);
 }
 
-fn token(name: &str) {
-    println!("Token, name: {}", name);
+fn token(name: &str, initial: Option<bool>) {
+    match initial {
+        Some(_) => println!("Initial token for: {}", name),
+        None => println!("Token for: {}", name),
+    }
 
     let wd = ensure_wd().unwrap();
     let config = read_config(&wd).unwrap();
