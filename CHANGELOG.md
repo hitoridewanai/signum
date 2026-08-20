@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-20
 
 Since `0.1.0`, the codebase was split into `lib.rs`/`main.rs` and went through a security- and
 correctness-focused pass. Highlights below; see git history for full detail.
@@ -53,6 +53,14 @@ correctness-focused pass. Highlights below; see git history for full detail.
 
 - `configure` now trims and rejects empty `user_id`/`key_id` input before validating the GPG
   key, instead of validating the raw (newline-terminated) input from `read_line`.
+- Broadened the profile-name allowlist to include `.`, `@`, and `:` (still excluding `/` and
+  `\`, and still rejecting `.`/`..` exactly) — the initial `[A-Za-z0-9_-]`-only allowlist broke
+  real-world profile names such as email addresses (`user@example.com`) or
+  `user@example.com:service`.
+- `token` now accepts secrets under RFC 4226's 128-bit recommended minimum (`totp-rs`'s
+  `build()` rejected these; switched to `build_noncompliant()`), and normalizes lowercase
+  letters, internal whitespace, and `=` padding before decoding — restoring the leniency
+  `oathtool -b` had, which some already-stored real-world secrets depend on.
 
 ### Added
 
