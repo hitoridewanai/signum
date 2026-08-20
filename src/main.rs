@@ -1,269 +1,130 @@
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{stdin, stdout, Error, Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::{fs, process};
+use std::io::{stdin, stdout, Write};
 
-const WORK_DIR: &str = ".2fa";
-const CONFIG_FILENAME: &str = "config";
-const SECRET_FILENAME: &str = ".secret";
-const SECRET_ENC_FILENAME: &str = ".secret.gpg";
+use anyhow::Context;
+use clap::{Parser, Subcommand};
+use signum::{ensure_gpg, SignumManager};
+use zeroize::Zeroizing;
 
-fn main() {
-    ensure_arg_count(2);
-
-    match arg(1).as_str() {
-        "configure" => configure(),
-        "list" => list(),
-        "add" => {
-            ensure_arg_count(4);
-            ensure_gpg();
-            add(&arg(2), &arg(3));
-        }
-        "remove" => {
-            ensure_arg_count(3);
-            remove(&arg(2));
-        }
-        "token" => {
-            ensure_arg_count(3);
-            ensure_gpg();
-            ensure_oathtool();
-            token(&arg(2), Option::None);
-        }
-        _ => print_usage(),
-    }
+#[derive(Parser)]
+#[command(
+    name = "signum",
+    about = "Manage token-based multi-factor authentication",
+    version
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
 }
 
-fn configure() {
-    println!("Configuring...");
-
-    let mut wd = ensure_wd().unwrap();
-
-    let mut user_id = String::new();
-    let mut kid = String::new();
-
-    print!("Please input user ID/e-mail: ");
-    stdout().flush().unwrap();
-    read_user_input(&mut user_id);
-
-    print!("Please input GPG key ID: ");
-    stdout().flush().unwrap();
-    read_user_input(&mut kid);
-
-    wd.push(CONFIG_FILENAME);
-
-    let mut file = File::create(&wd).unwrap();
-    file.write_all(format!("{}{}", &user_id, &kid).as_bytes())
-        .unwrap();
-
-    println!("Configured!");
+#[derive(Subcommand)]
+enum Command {
+    /// Configure the GPG identity used to encrypt and decrypt secrets
+    Configure,
+    /// List all configured profiles
+    List,
+    /// Add a new profile (prompts for the TOTP secret)
+    Add { name: String },
+    /// Remove a profile
+    Remove {
+        name: String,
+        /// Skip the confirmation prompt
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Generate a token for a profile
+    Token { name: String },
 }
 
-fn list() {
-    println!("Listing...");
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let mut manager = SignumManager::new().context("failed to initialize signum")?;
 
-    let wd = ensure_wd().unwrap();
-    let entries = fs::read_dir(&wd).unwrap();
-
-    for entry in entries {
-        let path = entry.unwrap().path();
-
-        if fs::metadata(&path).unwrap().is_dir() {
-            let name = path.strip_prefix(&wd).unwrap();
-            println!("{}", &name.display());
+    match cli.command {
+        Command::Configure => configure(&mut manager)?,
+        Command::List => list(&manager)?,
+        Command::Add { name } => {
+            ensure_gpg()?;
+            add(&mut manager, &name)?;
+        }
+        Command::Remove { name, yes } => remove(&manager, &name, yes)?,
+        Command::Token { name } => {
+            ensure_gpg()?;
+            token(&manager, &name)?;
         }
     }
-}
-
-fn add(name: &str, secret: &str) {
-    println!("Adding, name: {}, secret: {}", name, secret);
-
-    let wd = ensure_wd().unwrap();
-    let config = read_config(&wd).unwrap();
-
-    let profile_path = create_profile(&wd, name).unwrap();
-    let secret_path = store_secret(&profile_path, secret).unwrap();
-    encrypt_secret(&secret_path, &config).unwrap();
-
-    println!("Added, name: {}", name);
-
-    token(name, Option::Some(true));
-}
-
-fn remove(name: &str) {
-    println!("Removing, name: {}", name);
-
-    let mut wd = ensure_wd().unwrap();
-    wd.push(name);
-
-    fs::remove_dir_all(&wd).unwrap();
-
-    println!("Removed, name: {}", name);
-}
-
-fn token(name: &str, initial: Option<bool>) {
-    match initial {
-        Some(_) => println!("Initial token for: {}", name),
-        None => println!("Token for: {}", name),
-    }
-
-    let wd = ensure_wd().unwrap();
-    let config = read_config(&wd).unwrap();
-    let secret_enc_path = secret_enc_path(&wd, name);
-    let secret = decrypt_secret(&secret_enc_path, &config).unwrap();
-
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(format!("oathtool -b --totp '{}'", secret))
-        .output()
-        .unwrap();
-
-    let token = String::from_utf8(output.stdout).unwrap();
-
-    println!("{}", token);
-}
-
-fn decrypt_secret(secret_enc_path: &Path, config: &HashMap<&str, String>) -> Result<String, Error> {
-    let user_id = config.get("user_id").unwrap();
-    let key_id = config.get("key_id").unwrap();
-
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(format!(
-            "gpg --quiet -r {} -u {} --decrypt {:?}",
-            user_id, key_id, secret_enc_path
-        ))
-        .output()?;
-
-    let secret = String::from_utf8(output.stdout).unwrap();
-
-    Result::Ok(secret)
-}
-
-fn encrypt_secret(secret_path: &Path, config: &HashMap<&str, String>) -> Result<(), Error> {
-    let user_id = config.get("user_id").unwrap();
-    let key_id = config.get("key_id").unwrap();
-
-    Command::new("sh")
-        .arg("-c")
-        .arg(format!(
-            "gpg -r {} -u {} --encrypt {:?}",
-            user_id, key_id, secret_path
-        ))
-        .output()?;
-
-    fs::remove_file(secret_path)?;
 
     Ok(())
 }
 
-fn store_secret(profile: &Path, secret: &str) -> Result<PathBuf, Error> {
-    let mut path = PathBuf::from(profile);
-    path.push(SECRET_FILENAME);
+fn configure(manager: &mut SignumManager) -> anyhow::Result<()> {
+    println!("Configuring...");
 
-    let mut file = File::create(&path)?;
-    file.write_all(secret.as_bytes())?;
+    let user_id = read_input("Please input user ID/e-mail: ")?;
+    let key_id = read_input("Please input GPG key ID: ")?;
 
-    Result::Ok(path)
+    manager.configure(&user_id, &key_id)?;
+    println!("Configured!");
+    Ok(())
 }
 
-fn create_profile(wd: &Path, name: &str) -> Result<PathBuf, Error> {
-    let mut path = PathBuf::from(wd);
-    path.push(name);
+fn list(manager: &SignumManager) -> anyhow::Result<()> {
+    println!("Listing...");
 
-    fs::create_dir(&path)?;
-
-    Result::Ok(path)
+    let profiles = manager.list_profiles()?;
+    for profile in profiles {
+        println!("{profile}");
+    }
+    Ok(())
 }
 
-fn ensure_wd() -> Result<PathBuf, Error> {
-    let mut wd = home::home_dir().unwrap();
-    wd.push(WORK_DIR);
+fn add(manager: &mut SignumManager, name: &str) -> anyhow::Result<()> {
+    println!("Adding, name: {name}");
 
-    if !Path::new(&wd).exists() {
-        println!("Creating working directory under {:?}", &wd);
-        fs::create_dir(&wd)?;
+    let secret = Zeroizing::new(rpassword::prompt_password("Secret (TOTP seed, base32): ")?);
+    let secret = secret.trim();
+    if secret.is_empty() {
+        anyhow::bail!("secret cannot be empty");
     }
 
-    Result::Ok(wd)
+    manager.add_profile(name, secret)?;
+    println!("Added, name: {name}");
+
+    // Generate initial token
+    token(manager, name)
 }
 
-fn read_user_input(buffer: &mut String) {
-    stdin().read_line(buffer).unwrap();
-}
-
-fn arg(nth: usize) -> String {
-    std::env::args().nth(nth).unwrap()
-}
-
-fn ensure_arg_count(count: usize) {
-    if std::env::args().len() < count {
-        print_usage();
-    }
-}
-
-fn secret_enc_path(wd: &Path, name: &str) -> PathBuf {
-    let mut path = PathBuf::from(wd);
-    path.push(name);
-    path.push(SECRET_ENC_FILENAME);
-
-    path
-}
-
-fn ensure_gpg() {
-    match Command::new("gpg").arg("--version").output() {
-        Ok(_) => (),
-        Err(_) => {
-            println!("GPG not detected, exiting...");
-            process::exit(2);
+fn remove(manager: &SignumManager, name: &str, skip_confirmation: bool) -> anyhow::Result<()> {
+    if !skip_confirmation {
+        let answer = read_input(&format!(
+            "Remove profile '{name}'? This cannot be undone. [y/N]: "
+        ))?;
+        if !matches!(answer.as_str(), "y" | "Y" | "yes" | "Yes") {
+            println!("Aborted.");
+            return Ok(());
         }
     }
+
+    println!("Removing, name: {name}");
+
+    manager.remove_profile(name)?;
+    println!("Removed, name: {name}");
+    Ok(())
 }
 
-fn ensure_oathtool() {
-    match Command::new("oathtool").output() {
-        Ok(_) => (),
-        Err(_) => {
-            println!("Oathtool not detected, exiting...");
-            process::exit(2);
-        }
-    }
+fn token(manager: &SignumManager, name: &str) -> anyhow::Result<()> {
+    println!("Token for: {name}");
+
+    let token = manager.generate_token(name)?;
+    println!("{token}");
+    Ok(())
 }
 
-fn read_config(wd: &Path) -> Result<HashMap<&str, String>, Error> {
-    let mut path = PathBuf::from(wd);
-    path.push(CONFIG_FILENAME);
+fn read_input(prompt: &str) -> anyhow::Result<String> {
+    print!("{prompt}");
+    stdout().flush()?;
 
-    let mut file = File::open(&path)?;
+    let mut input = String::new();
+    stdin().read_line(&mut input)?;
 
-    let mut data = String::new();
-    file.read_to_string(&mut data)?;
-
-    let values: Vec<&str> = data.split('\n').collect();
-
-    let user_id = String::from(values[0]);
-    let key_id = String::from(values[1]);
-
-    let mut config = HashMap::new();
-    config.insert("user_id", user_id);
-    config.insert("key_id", key_id);
-
-    Result::Ok(config)
-}
-
-fn print_usage() {
-    println!("Manage token-based multi-factor authentication");
-    println!("\nUSAGE:");
-    println!("\tsignum OPERATION ARGS");
-    println!("\nOPERATIONS:");
-    println!("\tconfigure | list | add | remove | token");
-    println!("\nadd:");
-    println!("\tname secret");
-    println!("\nremove:");
-    println!("\tname");
-    println!("\ntoken:");
-    println!("\tname");
-
-    process::exit(1);
+    Ok(input.trim().to_string())
 }
