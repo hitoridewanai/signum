@@ -2,7 +2,19 @@
 name = "signum"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
+description = "A secure command-line tool for managing TOTP 2FA tokens with GPG encryption"
+license = "MIT"
+repository = "https://github.com/hitoridewanai/signum"
 
 [dependencies]
-log = "0.4.14"
 home = "0.5.3"
+anyhow = "1.0"
+thiserror = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+rpassword = "7.0"
+totp-rs = { version = "6.0.0", default-features = false, features = ["std", "alloc"] }
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
