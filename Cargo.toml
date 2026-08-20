@@ -1,6 +1,6 @@
 [package]
 name = "signum"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 description = "A secure command-line tool for managing TOTP 2FA tokens with GPG encryption"
